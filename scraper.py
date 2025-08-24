@@ -3,10 +3,12 @@ from calendar import monthrange
 from pathlib import Path
 
 WIKIPEDIA_ENDPOINT = "https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/all"
-MAX_ATTEMPTS = 10
-attempts = 0
-
 DB_PATH = "./facts.db"
+MAX_ATTEMPTS = 10
+REQUEST_DELAY = 5 # secods to wait before each request
+FAIL_DELAY = 10 # seconds to wait if a request fails before trying again
+
+attempts = 0
 
 def get_facts_from_day(i_day, i_month, con, cur):
     for month in range(i_month, 13):
@@ -36,14 +38,14 @@ def get_facts_from_day(i_day, i_month, con, cur):
                 cur.executemany("INSERT INTO Facts VALUES (?, ?, ?, ?, ?, ?)", facts)
                 con.commit()
             else:
-                print(f"\033[31m[{day:02}/{month:02} ERROR] ->\033[37m Retrying in 10s...")
+                print(f"\033[31m[{day:02}/{month:02} ERROR] ->\033[37m Retrying in {FAIL_DELAY}s...")
                 if attempts < MAX_ATTEMPTS:
-                    time.sleep(10)
+                    time.sleep(FAIL_DELAY)
                     return get_facts_from_day(day, month, con, cur)
 
             # Reset day so it wraps to the first day of the next month correctly in case we specify a initial date
             i_day = 1
-            time.sleep(5)
+            time.sleep(REQUEST_DELAY)
 
 if __name__ == "__main__":
     i_day = 1 # 1st
