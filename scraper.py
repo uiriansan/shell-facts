@@ -15,7 +15,6 @@ def get_facts_from_day(i_day, i_month, con, cur):
             response = requests.get(f"{WIKIPEDIA_ENDPOINT}/{month:02}/{day:02}")
             if response.status_code == 200:
                 data = response.json()
-                
                 for key, facts in data.items():
                     for i in range(len(facts)):
                         text = facts[i].get("text")

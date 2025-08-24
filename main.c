@@ -14,12 +14,6 @@ const char *DB_PATH = "/facts.db";
 
 typedef struct {
   char *text;
-  char *thumb_url;
-  char *url;
-} Page;
-
-typedef struct {
-  char *text;
   unsigned int year;
   cJSON *pages;
 } Fact;
@@ -35,6 +29,24 @@ char *resolve_db_path() {
     fprintf(stderr, "[ERROR]: Could not resolve DB_PATH.\n");
     exit(1);
   }
+}
+
+void parse_data(Fact fact) {}
+
+void print_fact(Fact fact) {
+  struct winsize w;
+  ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+
+  if (cJSON_IsArray(fact.pages)) {
+    cJSON *first_page = cJSON_GetArrayItem(fact.pages, 0);
+    cJSON *thumb = cJSON_GetObjectItemCaseSensitive(first_page, "thumb");
+    if (cJSON_IsString(thumb) && *thumb->valuestring) {
+      printf("Thumb: %s\n", thumb->valuestring);
+    }
+  }
+
+  printf("Text: %s\nYear: %d\n", fact.text, fact.year);
+  printf("Term size: %dx%d\n", w.ws_row, w.ws_col);
 }
 
 int main(int argc, char **argv) {
@@ -67,6 +79,7 @@ int main(int argc, char **argv) {
   sqlite3_bind_int(stmt, 2, tm_info->tm_mon + 1);
 
   Fact fact = {.text = "", .year = 0};
+
   rc = sqlite3_step(stmt);
   if (rc == SQLITE_ROW) {
     fact.text = strdup((const char *)sqlite3_column_text(stmt, 0));
@@ -83,32 +96,11 @@ int main(int argc, char **argv) {
     return 1;
   }
   sqlite3_finalize(stmt);
+  sqlite3_close(db);
 
-  if (cJSON_IsArray(fact.pages)) {
-    cJSON *first_page = cJSON_GetArrayItem(fact.pages, 0);
-    cJSON *thumb = cJSON_GetObjectItemCaseSensitive(first_page, "thumb");
-    if (cJSON_IsString(thumb)) {
-      printf("Thumb: %s\n", thumb->valuestring);
-    }
-  }
-
-  printf("Text: %s\nYear: %d\n", fact.text, fact.year);
+  print_fact(fact);
 
   free(fact.text);
   cJSON_Delete(fact.pages);
-  sqlite3_close(db);
-
-  struct winsize w;
-  ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
-
-  // for (size_t i = 0; i < 10; i++) {
-  //   for (size_t j = 0; j < w.ws_col; j++) {
-  //     printf("=");
-  //   }
-  //   printf("\n");
-  // }
-
-  // printf("%dx%d\n", w.ws_row, w.ws_col);
-
   return 0;
 }
