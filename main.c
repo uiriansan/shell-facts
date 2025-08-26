@@ -1,4 +1,5 @@
 #include "cjson/cJSON.h"
+#include <ctype.h>
 #include <libgen.h>
 #include <limits.h>
 #include <linux/limits.h>
@@ -12,6 +13,8 @@
 #include <unistd.h>
 
 #define DB_PATH "/facts.db"
+#define IMAGE_MAX_LINES 50
+#define IMAGE_MAX_LINE_LENGTH 512
 
 typedef struct {
     char *text;
@@ -66,6 +69,52 @@ void strip_title(char *title) {
     }
 }
 
+char **get_thumbnail_sequence(char *thumb) {
+    FILE *fp;
+    char buf[IMAGE_MAX_LINE_LENGTH];
+    char **image_lines = malloc(sizeof(char *) * IMAGE_MAX_LINES);
+    if (image_lines == NULL) {
+        fprintf(stderr, "Memory allocation failed!\n");
+        return NULL;
+    }
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "curl -s '%s' | chafa --size=30x10 --align='top,left'", thumb);
+    fp = popen(cmd, "r");
+    if (fp == NULL) {
+        fprintf(stderr, "Failed to retrieve image data!\n");
+        free(image_lines);
+        return NULL;
+    }
+    size_t i = 0;
+    while (fgets(buf, sizeof(buf), fp) != NULL && i < IMAGE_MAX_LINES) {
+        image_lines[i] = strdup(buf);
+        if (image_lines[i] == NULL) {
+            fprintf(stderr, "`strdup` failed!\n");
+            for (size_t j = 0; j < i; j++) {
+                free(image_lines[j]);
+            }
+            free(image_lines);
+            pclose(fp);
+            return NULL;
+        }
+        i++;
+    }
+
+    if (i < IMAGE_MAX_LINES) {
+        image_lines[i] = NULL;
+    }
+
+    pclose(fp);
+    return image_lines;
+}
+
+char *to_lower(char *str) {
+    for (char *p = str; *p; p++) {
+        *p = tolower(*p);
+    }
+    return str;
+}
+
 void print_fact(Fact fact) {
     struct winsize w;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
@@ -78,6 +127,10 @@ void print_fact(Fact fact) {
     // printf("%s\nYear: %d%s\n", fact.text, abs(fact.year),
     //        fact.year < 0 ? " BC" : "");
     printf("%s\n", fact.text);
+
+    // TODO: Get correct thumbnail
+    if (strstr(to_lower(fact.text), "(pictured)") != NULL) {
+    }
 
     if (cJSON_IsArray(fact.pages)) {
         cJSON *page, *thumb;
@@ -116,8 +169,17 @@ void print_fact(Fact fact) {
             i++;
         }
         printf("\n");
+
+        char **image_lines;
         if (cJSON_IsString(thumb) && *thumb->valuestring) {
-            printf("Thumb: %s\n", thumb->valuestring);
+            image_lines = get_thumbnail_sequence(thumb->valuestring);
+        }
+        if (image_lines != NULL) {
+
+            for (size_t i = 0; image_lines[i] != NULL; i++) {
+                free(image_lines[i]);
+            }
+            free(image_lines);
         }
     }
     printf("Term size: %dx%d\n", w.ws_row, w.ws_col);
