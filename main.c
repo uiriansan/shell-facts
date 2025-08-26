@@ -1,10 +1,12 @@
 #include "cjson/cJSON.h"
 #include <ctype.h>
+#include <getopt.h>
 #include <libgen.h>
 #include <limits.h>
 #include <linux/limits.h>
 #include <sqlite3.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,23 +168,79 @@ void print_fact(Fact fact) {
         }
         printf("\n");
 
-        char **image_lines;
-        if (cJSON_IsString(thumb) && *thumb->valuestring) {
-            image_lines = get_thumbnail_sequence(thumb->valuestring);
-        }
-        if (image_lines != NULL) {
-
-            for (size_t i = 0; image_lines[i] != NULL; i++) {
-                free(image_lines[i]);
-            }
-            free(image_lines);
-        }
+        // char **image_lines;
+        // if (cJSON_IsString(thumb) && *thumb->valuestring) {
+        //     image_lines = get_thumbnail_sequence(thumb->valuestring);
+        // }
+        // if (image_lines != NULL) {
+        //
+        //     for (size_t i = 0; image_lines[i] != NULL; i++) {
+        //         free(image_lines[i]);
+        //     }
+        //     free(image_lines);
+        // }
     }
     printf("Term size: %dx%d\n", w.ws_row, w.ws_col);
 }
 
+void print_cli_usage() {
+    printf("-h, --help           -> Prints this message.\n"
+           "-r, --raw            -> Outputs raw data separated by '||'\n"
+           "-d, --db-path <path> -> Changes the path to the databse.\n"
+           "                        By default, the program will look for 'facts.db'\n"
+           "                        in the same directory as the executable.\n"
+           "-t, --type <type>    -> Which kind of fact should be displayed.\n"
+           "                        Options are: selected, births, deaths, events and holidays.\n"
+           "                        Default is 'selected'.\n");
+}
+
+static struct option cli_options[] = {
+    {"help", no_argument, NULL, 'h'},
+    {"raw", no_argument, NULL, 'r'},
+    {"db-path", required_argument, NULL, 'd'},
+    {"type", required_argument, NULL, 't'},
+    {NULL, 0, NULL, 0}};
+
 int main(int argc, char **argv) {
+    uint8_t output_raw = 0;
+    char *output_type = "selected";
     char *db_path = resolve_db_path();
+
+    int ch;
+    while ((ch = getopt_long(argc, argv, "hrd:t:", cli_options, NULL)) != -1) {
+        if (ch == -1)
+            break;
+
+        switch (ch) {
+        case 'r':
+            output_raw = 1;
+            break;
+        case 'd':
+            if (access(optarg, F_OK) == 0 && strcmp((char *)optarg + strlen(optarg) - 3, ".db") == 0) {
+                db_path = optarg;
+            } else {
+                printf("`db-path` is not a valid sqlite .db file.\n");
+                exit(1);
+            }
+            break;
+        case 't':
+            if (strcmp(to_lower(optarg), "selected") == 0 ||
+                strcmp(to_lower(optarg), "births") == 0 ||
+                strcmp(to_lower(optarg), "deaths") == 0 ||
+                strcmp(to_lower(optarg), "events") == 0 ||
+                strcmp(to_lower(optarg), "holidays") == 0) {
+                output_type = optarg;
+            } else {
+                printf("Invalid type `%s`. Valid types are `selected, births, deaths, events and holidays`\n\n", optarg);
+            }
+            break;
+        case 'h':
+        default:
+            print_cli_usage();
+            exit(1);
+        }
+    }
+
     if (db_path == NULL) {
         fprintf(stderr, "[ERROR]: Could not resolve DB_PATH.\n");
         return 1;
@@ -198,7 +256,7 @@ int main(int argc, char **argv) {
 
     sqlite3_stmt *stmt;
     const char *sql = "SELECT text, year, pages FROM Facts WHERE type LIKE "
-                      "'selected' AND day LIKE ? AND month LIKE "
+                      "? AND day LIKE ? AND month LIKE "
                       "? ORDER BY RANDOM() LIMIT 1;";
 
     rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
@@ -209,8 +267,9 @@ int main(int argc, char **argv) {
     }
     time_t t = time(NULL);
     struct tm *tm_info = localtime(&t);
-    sqlite3_bind_int(stmt, 1, tm_info->tm_mday);
-    sqlite3_bind_int(stmt, 2, tm_info->tm_mon + 1);
+    sqlite3_bind_text(stmt, 1, output_type, strlen(output_type), SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, tm_info->tm_mday);
+    sqlite3_bind_int(stmt, 3, tm_info->tm_mon + 1);
 
     Fact fact = {.text = "", .year = 0};
 
@@ -218,7 +277,9 @@ int main(int argc, char **argv) {
     if (rc == SQLITE_ROW) {
         fact.text = strdup((const char *)sqlite3_column_text(stmt, 0));
         fact.year = sqlite3_column_int(stmt, 1);
-        fact.pages = cJSON_Parse(strdup((const char *)sqlite3_column_text(stmt, 2)));
+        char *pages_str = strdup((const char *)sqlite3_column_text(stmt, 2));
+        fact.pages = cJSON_Parse(pages_str);
+        free(pages_str);
         if (fact.pages == NULL) {
             fprintf(stderr, "[ERROR]: Failed to parse pages: %s\n", cJSON_GetErrorPtr());
         }
