@@ -2,5 +2,5 @@ __pycache__*
 venv*
 build/
 facts.db
-shell_facts
+shell-facts
 res.md
