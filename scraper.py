@@ -5,7 +5,7 @@ from pathlib import Path
 WIKIPEDIA_ENDPOINT = "https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/all"
 DB_PATH = "./facts.db"
 MAX_ATTEMPTS = 10
-REQUEST_DELAY = 5 # secods to wait before each request
+REQUEST_DELAY = 3 # secods to wait before each request
 FAIL_DELAY = 10 # seconds to wait if a request fails before trying again
 
 attempts = 0
@@ -14,7 +14,7 @@ def get_facts_from_day(i_day, i_month, con, cur):
     for month in range(i_month, 13):
         ( _, days ) = monthrange(2012, month)
         for day in range(i_day, days + 1):
-            response = requests.get(f"{WIKIPEDIA_ENDPOINT}/{month:02}/{day:02}")
+            response = requests.get(f"{WIKIPEDIA_ENDPOINT}/{month:02}/{day:02}", headers = { "User-Agent": "shell-facts/1.0",})
             if response.status_code == 200:
                 data = response.json()
                 for key, facts in data.items():
@@ -30,14 +30,17 @@ def get_facts_from_day(i_day, i_month, con, cur):
                             }
                             for page in pages_raw
                         ]
-                        facts[i] = (text, key, day, month, year, json.dumps(pages))
+                        thumb = get_thumbnail(text, pages)
+                        facts[i] = (text, key, thumb, day, month, year, json.dumps(pages))
 
                 facts = data["selected"] + data["births"] + data["deaths"] + data["events"] + data["holidays"]
                 print(f"\033[32m[{day:02}/{month:02} OK] ->\033[37m Fetched {len(facts)} facts.")
 
-                cur.executemany("INSERT INTO Facts VALUES (?, ?, ?, ?, ?, ?)", facts)
+                cur.executemany("INSERT INTO Facts VALUES (?, ?, ?, ?, ?, ?, ?)", facts)
                 con.commit()
             else:
+                message = response.text.strip()
+                print(f"[{response.status_code}]: {message}")
                 print(f"\033[31m[{day:02}/{month:02} ERROR] ->\033[37m Retrying in {FAIL_DELAY}s...")
                 if attempts < MAX_ATTEMPTS:
                     time.sleep(FAIL_DELAY)
@@ -46,6 +49,29 @@ def get_facts_from_day(i_day, i_month, con, cur):
             # Reset day so it wraps to the first day of the next month correctly in case we specify a initial date
             i_day = 1
             time.sleep(REQUEST_DELAY)
+
+def get_thumbnail(text, pages):
+    if len(pages) == 0:
+        return None
+
+    thumb = None
+    for page in pages:
+        if page["thumb"] and page["thumb"] != "":
+            thumb = page["thumb"]
+            break
+
+    if (loc := text.lower().find("(pictured)")) != -1:
+        tester = ""
+        while(loc >= 0):
+            loc -= 1
+            tester += text[loc].replace(chr(160), ' ') # replace non-breaking spaces with regular spaces
+            for page in pages:
+                # reverse string and test:
+                if tester[::-1].lower().strip() == page["title"].lower().replace("_", " ").replace(chr(160), ' ').strip():
+                    if page["thumb"] and page["thumb"] != "":
+                        return page["thumb"]
+    return thumb
+
 
 if __name__ == "__main__":
     i_day = 1 # 1st
@@ -75,6 +101,7 @@ if __name__ == "__main__":
         CREATE TABLE IF NOT EXISTS Facts(
             text TEXT NOT NULL,
             type TEXT NOT NULL,
+            thumb TEXT,
             day INT NOT NULL, 
             month INT NOT NULL, 
             year INT, 
@@ -82,6 +109,7 @@ if __name__ == "__main__":
         )
     """)
 
+    print("Downloading...")
     get_facts_from_day(i_day, i_month, con, cur)
 
     con.close()

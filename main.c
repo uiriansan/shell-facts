@@ -128,10 +128,6 @@ void print_fact(Fact fact) {
     //        fact.year < 0 ? " BC" : "");
     printf("%s\n", fact.text);
 
-    // TODO: Get correct thumbnail
-    if (strstr(to_lower(fact.text), "(pictured)") != NULL) {
-    }
-
     if (cJSON_IsArray(fact.pages)) {
         cJSON *page, *thumb;
         size_t i = 0;
