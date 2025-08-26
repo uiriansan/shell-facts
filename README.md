@@ -6,7 +6,6 @@ Simple utility that fetches random facts from Wikipedia, saves them locally and 
 - [Python3](https://www.python.org/);
 - [sqlite3](https://sqlite.org/);
 - [chafa](https://github.com/hpjansson/chafa);
-- [curl and libcurl](https://curl.se/libcurl/);
 
 ### 2. Clone this repo:
 ```bash
@@ -35,7 +34,8 @@ python scraper.py
 If the download fails, you can resume from where it stopped by passing `day` and `month` as arguments to scraper.py:
 ```bash
 python scraper.py <day> <month>
-# e.g.: python scraper.py 16 5 -> May 16th
+# e.g.: python scraper.py 16 5
+#                         May 16th
 ```
 
 ### 5. Build the C program:
@@ -43,7 +43,7 @@ python scraper.py <day> <month>
 make && make run
 ```
 
-### 5. Run:
+### 6. Run:
 ```bash
 ./shell-facts
 ```
