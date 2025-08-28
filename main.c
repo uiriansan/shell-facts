@@ -25,16 +25,9 @@ typedef struct {
 } Fact;
 
 typedef struct {
-    char *data;
-    size_t count;
-    size_t capacity;
-} StringBuffer;
-
-void sb_append(StringBuffer sb, char *str) {
-    if (sb.count + strlen(str) < sb.capacity) {
-        strcat(sb.data, str);
-    }
-}
+    char *data[IMAGE_MAX_LINES];
+    size_t line_count;
+} ChafaImageSequence;
 
 char *resolve_db_path() {
     char exe_path[PATH_MAX];
@@ -168,17 +161,17 @@ void print_fact(Fact fact) {
         }
         printf("\n");
 
-        // char **image_lines;
-        // if (cJSON_IsString(thumb) && *thumb->valuestring) {
-        //     image_lines = get_thumbnail_sequence(thumb->valuestring);
-        // }
-        // if (image_lines != NULL) {
-        //
-        //     for (size_t i = 0; image_lines[i] != NULL; i++) {
-        //         free(image_lines[i]);
-        //     }
-        //     free(image_lines);
-        // }
+        char **image_lines;
+        if (cJSON_IsString(thumb) && *thumb->valuestring) {
+            image_lines = get_thumbnail_sequence(thumb->valuestring);
+        }
+        if (image_lines != NULL) {
+
+            for (size_t i = 0; image_lines[i] != NULL; i++) {
+                free(image_lines[i]);
+            }
+            free(image_lines);
+        }
     }
     printf("Term size: %dx%d\n", w.ws_row, w.ws_col);
 }
@@ -189,7 +182,7 @@ void print_cli_usage() {
            "-d, --db-path <path> -> Changes the path to the databse.\n"
            "                        By default, the program will look for 'facts.db'\n"
            "                        in the same directory as the executable.\n"
-           "-t, --type <type>    -> Which kind of fact should be displayed.\n"
+           "-t, --type <type>    -> The type of fact to be displayed.\n"
            "                        Options are: selected, births, deaths, events and holidays.\n"
            "                        Default is 'selected'.\n");
 }

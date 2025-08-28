@@ -1,6 +1,6 @@
 Simple utility that fetches random facts from Wikipedia, saves them locally and displays on your terminal.
 
-# Usage:
+# Build:
 
 ### 1. Install system dependencies:
 - [Python3](https://www.python.org/);
@@ -31,7 +31,7 @@ pip install -r requirements.txt
 ```bash
 python scraper.py
 ```
-If the download fails, you can resume from where it stopped by passing `day` and `month` as arguments to scraper.py:
+If the download crashes, you can resume from where it stopped by passing `day` and `month` as arguments to scraper.py:
 ```bash
 python scraper.py <day> <month>
 # e.g.: python scraper.py 16 5
@@ -47,4 +47,20 @@ make && make run
 ```bash
 ./shell-facts
 ```
+
+
+# Usage:
+You can tweak the output of `shell-facts` with the following options:
+
+`-h, --help`           -> Prints help.
+
+`-r, --raw`            -> Outputs raw data separated by '||'
+
+`-d, --db-path <path>` -> Changes the path to the databse.
+                        By default, the program will look for 'facts.db'
+                        in the same directory as the executable.
+
+`-t, --type <type>`    -> The type of fact to be displayed.
+                        Options are: `selected`, `births`, `deaths`, `events` and `holidays`.
+                        Default is 'selected'.
 
