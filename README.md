@@ -52,12 +52,12 @@ make && make run
 # Usage:
 You can tweak the output of `shell-facts` with the following options:
 
-- `-h, --help`
+- `-h, --help`:
 Prints help.
-- `-r, --raw`
+- `-r, --raw`:
 Outputs raw data separated by '||'
--`-d, --db-path <path>`
+- `-d, --db-path <path>`:
 Changes the path to the databse. By default, the program will look for 'facts.db' in the same directory as the executable.
--`-t, --type <type>`
+- `-t, --type <type>`:
 The type of fact to be displayed. Options are: `selected`, `births`, `deaths`, `events` and `holidays`. Default is 'selected'.
 
