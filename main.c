@@ -17,17 +17,14 @@
 #define DB_PATH "/facts.db"
 #define IMAGE_MAX_LINES 50
 #define IMAGE_MAX_LINE_LENGTH 512
+#define IMAGE_TEMP_FILE "/tmp/shell-facts-XXXXXX"
 
 typedef struct {
     char *text;
+    char *thumb;
     int year;
     cJSON *pages;
 } Fact;
-
-typedef struct {
-    char *data[IMAGE_MAX_LINES];
-    size_t line_count;
-} ChafaImageSequence;
 
 char *resolve_db_path() {
     char exe_path[PATH_MAX];
@@ -64,43 +61,89 @@ void strip_title(char *title) {
     }
 }
 
-char **get_thumbnail_sequence(char *thumb) {
+size_t get_thumbnail_sequence(char *thumb, char ***image_buffer, char *chafa_options) {
     FILE *fp;
     char buf[IMAGE_MAX_LINE_LENGTH];
-    char **image_lines = malloc(sizeof(char *) * IMAGE_MAX_LINES);
-    if (image_lines == NULL) {
-        fprintf(stderr, "Memory allocation failed!\n");
-        return NULL;
+    char **lines = NULL;
+    size_t line_count = 0;
+
+    char image_temp_file[256];
+    strcpy(image_temp_file, IMAGE_TEMP_FILE);
+    int fd = mkstemp(image_temp_file);
+    if (fd == -1) {
+        fprintf(stderr, "Failed to create temp file!\n");
+        return -1;
     }
+    close(fd);
+
     char cmd[512];
-    snprintf(cmd, sizeof(cmd), "curl -s '%s' | chafa --size=30x10 --align='top,left'", thumb);
+    snprintf(cmd, sizeof(cmd), "curl -s --max-time 5 -o \"%s\" \"%s\"", image_temp_file, thumb);
+    if (system(cmd) != 0) {
+        fprintf(stderr, "Failed to download image file!\n");
+        unlink(image_temp_file);
+        return -1;
+    }
+
+    snprintf(cmd, sizeof(cmd), "chafa %s \"%s\"", chafa_options, image_temp_file);
+
+    // Alternatively, pipe the image data directly into chafa without a temp file:
+    // snprintf(cmd, sizeof(cmd), "curl -s \"%s\" | chafa %s", thumb, chafa_options);
+
     fp = popen(cmd, "r");
     if (fp == NULL) {
         fprintf(stderr, "Failed to retrieve image data!\n");
-        free(image_lines);
-        return NULL;
-    }
-    size_t i = 0;
-    while (fgets(buf, sizeof(buf), fp) != NULL && i < IMAGE_MAX_LINES) {
-        image_lines[i] = strdup(buf);
-        if (image_lines[i] == NULL) {
-            fprintf(stderr, "`strdup` failed!\n");
-            for (size_t j = 0; j < i; j++) {
-                free(image_lines[j]);
-            }
-            free(image_lines);
-            pclose(fp);
-            return NULL;
-        }
-        i++;
+        unlink(image_temp_file);
+        return -1;
     }
 
-    if (i < IMAGE_MAX_LINES) {
-        image_lines[i] = NULL;
+    lines = malloc(IMAGE_MAX_LINES * sizeof(char *));
+    if (lines == NULL) {
+        fprintf(stderr, "Failed to allocate memory for image data!\n");
+        pclose(fp);
+        unlink(image_temp_file);
+        return -1;
     }
+
+    char buffer[4096];
+
+    size_t br;
+    while ((br = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
+        // size_t len = strlen(buf);
+        // lines[line_count] = malloc((strlen(buf) + 1) * sizeof(char));
+        fwrite(buffer, 1, br, stdout); // Write directly
+
+        // if (lines[line_count] == NULL) {
+        //     fprintf(stderr, "Failed to allocate memory for image data!\n");
+        //     for (size_t i = 0; i < line_count; i++) {
+        //         free(lines[i]);
+        //     }
+        //     free(lines);
+        //     pclose(fp);
+        //     unlink(image_temp_file);
+        //     return -1;
+        // }
+        // strcpy(lines[line_count], buf);
+
+        line_count++;
+    }
+    printf("\033_Gq=1\033\\"); // Clear all Kitty graphics
+    fflush(stdout);
+
+    size_t lc = 0;
+    for (size_t i = 0; i < 4096; i++) {
+        if (buffer[i] == '\n')
+            lc++;
+    }
+    if (lc > 1) {
+    } // --format=symbols
+    else {
+    } // --format=kitty
+    printf("lines: %zu\n", lc);
 
     pclose(fp);
-    return image_lines;
+    unlink(image_temp_file);
+    *image_buffer = lines;
+    return line_count;
 }
 
 char *to_lower(char *str) {
@@ -108,6 +151,16 @@ char *to_lower(char *str) {
         *p = tolower(*p);
     }
     return str;
+}
+
+void print_raw(Fact fact) {
+    char *pages_string;
+    if (cJSON_IsArray(fact.pages)) {
+        pages_string = cJSON_Print(fact.pages);
+    }
+    cJSON_Minify(pages_string);
+    printf("%s||%s||%d||%s\n", fact.text, fact.thumb, fact.year, pages_string);
+    free(pages_string);
 }
 
 void print_fact(Fact fact) {
@@ -161,17 +214,22 @@ void print_fact(Fact fact) {
         }
         printf("\n");
 
-        char **image_lines;
+        char **image_lines = NULL;
+        size_t image_line_count = 0;
         if (cJSON_IsString(thumb) && *thumb->valuestring) {
-            image_lines = get_thumbnail_sequence(thumb->valuestring);
+            image_line_count = get_thumbnail_sequence(thumb->valuestring, &image_lines, "--size=30x10");
         }
-        if (image_lines != NULL) {
 
-            for (size_t i = 0; image_lines[i] != NULL; i++) {
-                free(image_lines[i]);
-            }
-            free(image_lines);
+        if (image_line_count < 0) {
+            fprintf(stderr, "Failed to retrieve image data!\n");
+            exit(1);
         }
+        printf("%zu\n", image_line_count);
+        for (size_t i = 0; i < image_line_count; i++) {
+            size_t br;
+            free(image_lines[i]);
+        }
+        free(image_lines);
     }
     printf("Term size: %dx%d\n", w.ws_row, w.ws_col);
 }
@@ -248,7 +306,7 @@ int main(int argc, char **argv) {
     }
 
     sqlite3_stmt *stmt;
-    const char *sql = "SELECT text, year, pages FROM Facts WHERE type LIKE "
+    const char *sql = "SELECT text, thumb, year, pages FROM Facts WHERE type LIKE "
                       "? AND day LIKE ? AND month LIKE "
                       "? ORDER BY RANDOM() LIMIT 1;";
 
@@ -269,8 +327,9 @@ int main(int argc, char **argv) {
     rc = sqlite3_step(stmt);
     if (rc == SQLITE_ROW) {
         fact.text = strdup((const char *)sqlite3_column_text(stmt, 0));
-        fact.year = sqlite3_column_int(stmt, 1);
-        char *pages_str = strdup((const char *)sqlite3_column_text(stmt, 2));
+        fact.thumb = strdup((const char *)sqlite3_column_text(stmt, 1));
+        fact.year = sqlite3_column_int(stmt, 2);
+        char *pages_str = strdup((const char *)sqlite3_column_text(stmt, 3));
         fact.pages = cJSON_Parse(pages_str);
         free(pages_str);
         if (fact.pages == NULL) {
@@ -280,15 +339,20 @@ int main(int argc, char **argv) {
         fprintf(stderr, "No facts today :/.\n");
         sqlite3_close(db);
         free(fact.text);
+        free(fact.thumb);
         cJSON_Delete(fact.pages);
         return 1;
     }
     sqlite3_finalize(stmt);
     sqlite3_close(db);
 
-    print_fact(fact);
+    if (output_raw)
+        print_raw(fact);
+    else
+        print_fact(fact);
 
     free(fact.text);
+    free(fact.thumb);
     cJSON_Delete(fact.pages);
     return 0;
 }

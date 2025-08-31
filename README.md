@@ -29,13 +29,13 @@ pip install -r requirements.txt
 
 ### 4. Download data from Wikipedia:
 ```bash
-python scraper.py
+python get-facts.py
 ```
 If the download crashes, you can resume from where it stopped by passing `day` and `month` as arguments to scraper.py:
 ```bash
-python scraper.py <day> <month>
-# e.g.: python scraper.py 16 5
-#                         May 16th
+python get-facts.py <day> <month>
+# e.g.: python get-facts.py 16 5
+#                           May 16th
 ```
 
 ### 5. Build the C program:
@@ -53,11 +53,25 @@ make && make run
 You can tweak the output of `shell-facts` with the following options:
 
 - `-h, --help`:
-Prints help.
+Prints help;
 - `-r, --raw`:
-Outputs raw data separated by '||'
+Outputs raw data separated by '||' (see below);
 - `-d, --db-path <path>`:
-Changes the path to the databse. By default, the program will look for 'facts.db' in the same directory as the executable.
+Changes the path to the databse. By default, the program will look for 'facts.db' in the same directory as the executable;
 - `-t, --type <type>`:
 The type of fact to be displayed. Options are: `selected`, `births`, `deaths`, `events` and `holidays`. Default is 'selected'.
+
+> `-r, --raw` outputs data in the following format:
+> `text`||`thumbnail`||`year`||`pages`
+> ...
+> `pages` is a stringified json array:
+> ```json
+[
+    {
+        "title": "",
+        "thumb": "",
+        "url": ""
+    }
+]
+```
 
