@@ -3,4 +3,3 @@ venv*
 build/
 facts.db
 shell-facts
-res.md

@@ -1,0 +1,12 @@
+-I../include/
+-I../include/vendor/
+-I/usr/include/chafa
+-I/usr/lib/chafa/include
+-I/usr/include/glib-2.0
+-I/usr/lib/glib-2.0/include
+-I/usr/include/sysprof-6
+-pthread 
+-lchafa
+-lglib-2.0
+-lsqlite3
+-lm

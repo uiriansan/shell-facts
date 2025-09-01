@@ -1,1 +1,1 @@
-stb_image.* linguist-vendored
+include/vendor/** linguist-vendored

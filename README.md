@@ -54,17 +54,21 @@ make && make run
 # Usage:
 You can tweak the output of `shell-facts` with the following options:
 
-- `-h, --help`:
-Prints help;
 - `-r, --raw`:
 Outputs raw data separated by '||' (see below);
-- `-d, --db-path <path>`:
-Changes the path to the databse. By default, the program will look for 'facts.db' in the same directory as the executable;
+- `-i, --no-img`:
+Do not display the thumbnail;
+- `-p, --db-path <path>`:
+Changes the path to the database. By default, the program will look for 'facts.db' in the same directory as the executable;
 - `-t, --type <type>`:
-The type of fact to be displayed. Options are: `selected`, `births`, `deaths`, `events` and `holidays`. Default is 'selected'.
+The type of fact to be displayed. Options are: `selected`, `births`, `deaths`, `events` and `holidays`. Default is 'selected';
+- `-d, --day <day>`:
+Display a fact for a specific day. Defaults to the current system date;
+- `-m, --month <month>`:
+Display a fact for a specific month. Defaults to the current system date
 
-> `-r, --raw` outputs data in the following format:
-> `text`||`thumbnail`||`thumb_w`||`thumb_h`||`year`||`pages` </br>
+> `-r, --raw` outputs data in the following format:</br>
+> `text`||`thumbnail`||`thumb_w`||`thumb_h`||`year`||`pages` </br></br>
 > `pages` is a stringified json array:
 > ```json
 > [
