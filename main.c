@@ -237,23 +237,6 @@ Fact query_data(CmdOptions options, char *type, int day, int month) {
     return fact;
 }
 
-void calculate_canvas_size(int img_width, int img_height,
-                           int max_cols, int max_rows,
-                           int *canvas_cols, int *canvas_rows) {
-    double img_aspect = (double)img_width / img_height;
-    double max_aspect = (double)max_cols / max_rows;
-
-    if (img_aspect > max_aspect) {
-        // Image is wider - limit by columns
-        *canvas_cols = max_cols;
-        *canvas_rows = (int)(max_cols / img_aspect);
-    } else {
-        // Image is taller - limit by rows
-        *canvas_rows = max_rows;
-        *canvas_cols = (int)(max_rows * img_aspect);
-    }
-}
-
 uint8_t render_thumb(char *thumb, int width, int height, int term_width, int term_height) {
     if (MAX_IMAGE_WIDTH * 3 > term_width || MAX_IMAGE_HEIGHT * 3 > term_height)
         return 0;
@@ -282,18 +265,45 @@ uint8_t render_thumb(char *thumb, int width, int height, int term_width, int ter
         return 0;
     }
 
+    ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
+    chafa_symbol_map_add_by_tags(symbol_map, CHAFA_SYMBOL_TAG_ALL);
+
     ChafaCanvasConfig *config = chafa_canvas_config_new();
+    chafa_canvas_config_set_symbol_map(config, symbol_map);
+
     int canvas_w = 30, canvas_h = 10;
     chafa_calc_canvas_geometry(img_width, img_height, &canvas_w, &canvas_h, 0.5, FALSE, FALSE);
-    chafa_canvas_config_set_geometry(config, canvas_w, canvas_h);
-    chafa_canvas_config_set_pixel_mode(config, CHAFA_PIXEL_MODE_KITTY);
-    // chafa_canvas_config_set_canvas_mode(config, CHAFA_CANVAS_MODE_TRUECOLOR);
+    int wo = 0, wh = 0;
+    chafa_canvas_config_get_geometry(config, &wo, &wh);
+    printf("W: %d, H: %d\nW: %d, H: %d", canvas_w, canvas_h, wo, wh);
+    chafa_canvas_config_set_cell_geometry(config, canvas_w, canvas_h);
+
+    gchar **envp;
+    envp = g_get_environ();
+    ChafaTermInfo *term_info = chafa_term_db_detect(chafa_term_db_get_default(), envp);
+    if (term_info == NULL) {
+        fprintf(stderr, "Failed to render image file!\n");
+        unlink(image_temp_file);
+        chafa_term_info_unref(term_info);
+        chafa_canvas_config_unref(config);
+        chafa_symbol_map_unref(symbol_map);
+        stbi_image_free(image_data);
+        return 0;
+    }
+    g_strfreev(envp);
+
+    chafa_canvas_config_set_pixel_mode(config, chafa_term_info_get_best_pixel_mode(term_info));
+    chafa_canvas_config_set_canvas_mode(config, chafa_term_info_get_best_canvas_mode(term_info));
     // chafa_canvas_config_set_work_factor(config, 1.0);
     // chafa_canvas_config_set_optimizations(config, CHAFA_OPTIMIZATION_ALL);
     ChafaCanvas *canvas = chafa_canvas_new(config);
 
     if (canvas == NULL) {
         fprintf(stderr, "Failed to render image file!\n");
+        unlink(image_temp_file);
+        chafa_term_info_unref(term_info);
+        chafa_canvas_config_unref(config);
+        chafa_symbol_map_unref(symbol_map);
         stbi_image_free(image_data);
         return 0;
     }
@@ -305,22 +315,20 @@ uint8_t render_thumb(char *thumb, int width, int height, int term_width, int ter
         g_string_free(g_string, TRUE);
     } else {
         fprintf(stderr, "Failed to render image file!\n");
+        chafa_term_info_unref(term_info);
+        chafa_canvas_unref(canvas);
+        chafa_canvas_config_unref(config);
+        chafa_symbol_map_unref(symbol_map);
+        stbi_image_free(image_data);
+        unlink(image_temp_file);
         return 0;
     }
 
+    chafa_term_info_unref(term_info);
     chafa_canvas_unref(canvas);
     chafa_canvas_config_unref(config);
+    chafa_symbol_map_unref(symbol_map);
     stbi_image_free(image_data);
-
-    // snprintf(cmd, sizeof(cmd), "chafa --size=%dx%d --view-size=%dx%d --relative=on --fit-width --align='center,center' \"%s\"", MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT, MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT, image_temp_file);
-    // // Alternatively, pipe the image data directly into chafa without a temp file:
-    // // snprintf(cmd, sizeof(cmd), "curl -s \"%s\" | chafa --size=30x10", thumb);
-    //
-    // if (system(cmd) != 0) {
-    //     fprintf(stderr, "Failed to render image file!\n");
-    //     unlink(image_temp_file);
-    //     return 0;
-    // }
 
     unlink(image_temp_file);
     return 1;
