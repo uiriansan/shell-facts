@@ -273,10 +273,9 @@ uint8_t render_thumb(char *thumb, int width, int height, int term_width, int ter
 
     int canvas_w = 30, canvas_h = 10;
     chafa_calc_canvas_geometry(img_width, img_height, &canvas_w, &canvas_h, 0.5, FALSE, FALSE);
-    int wo = 0, wh = 0;
-    chafa_canvas_config_get_geometry(config, &wo, &wh);
-    printf("W: %d, H: %d\nW: %d, H: %d", canvas_w, canvas_h, wo, wh);
-    chafa_canvas_config_set_cell_geometry(config, canvas_w, canvas_h);
+    chafa_canvas_config_set_geometry(config, canvas_w, canvas_h);
+    // chafa_canvas_config_get_cell_geometry(config, &canvas_w, &canvas_h);
+    // chafa_canvas_config_set_cell_geometry(config, canvas_w, canvas_h);
 
     gchar **envp;
     envp = g_get_environ();

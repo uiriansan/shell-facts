@@ -33,7 +33,7 @@ pip install -r requirements.txt
 ```bash
 python get-facts.py
 ```
-If the download crashes, you can resume from where it stopped by passing `day` and `month` as arguments to scraper.py:
+If the download crashes, you can resume from where it stopped by passing `day` and `month` as arguments to get-facts.py:
 ```bash
 python get-facts.py <day> <month>
 # e.g.: python get-facts.py 16 5
@@ -64,16 +64,17 @@ Changes the path to the databse. By default, the program will look for 'facts.db
 The type of fact to be displayed. Options are: `selected`, `births`, `deaths`, `events` and `holidays`. Default is 'selected'.
 
 > `-r, --raw` outputs data in the following format:
-> `text`||`thumbnail`||`year`||`pages`
-> ...
+> `text`||`thumbnail`||`thumb_w`||`thumb_h`||`year`||`pages` </br>
 > `pages` is a stringified json array:
 > ```json
-[
-    {
-        "title": "",
-        "thumb": "",
-        "url": ""
-    }
-]
-```
+> [
+>     {
+>         "title": "",
+>         "thumb": "",
+>         "thumb_w": 0,
+>         "thumb_h": 0,
+>         "url": ""
+>     }
+> ]
+> ```
 
