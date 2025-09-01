@@ -1,5 +1,5 @@
 shell-facts: main.c
-	gcc -lsqlite3 main.c cjson/cJSON.c cjson/cJSON_Utils.c -o shell-facts
+	gcc main.c cjson/cJSON.c cjson/cJSON_Utils.c `pkg-config --cflags --libs chafa` -lsqlite3 -lm -o shell-facts
 
 run:
 	@@./shell-facts

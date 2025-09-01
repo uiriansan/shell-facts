@@ -1,6 +1,8 @@
 #include "cjson/cJSON.h"
+#include <chafa/chafa.h>
 #include <ctype.h>
 #include <getopt.h>
+#include <glib-2.0/glib.h>
 #include <libgen.h>
 #include <limits.h>
 #include <linux/limits.h>
@@ -13,18 +15,36 @@
 #include <sys/ioctl.h>
 #include <time.h>
 #include <unistd.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 #define DB_PATH "/facts.db"
 #define IMAGE_MAX_LINES 50
 #define IMAGE_MAX_LINE_LENGTH 512
 #define IMAGE_TEMP_FILE "/tmp/shell-facts-XXXXXX"
+#define MAX_IMAGE_WIDTH 30
+#define MAX_IMAGE_HEIGHT 10
 
 typedef struct {
     char *text;
     char *thumb;
+    int t_width;
+    int t_height;
     int year;
     cJSON *pages;
 } Fact;
+
+typedef struct {
+    uint8_t output_raw;
+    uint8_t render_image;
+    char *db_path;
+    char *fact_type;
+    int day;
+    int month;
+
+    int term_rows;
+    int term_cols;
+} CmdOptions;
 
 char *resolve_db_path() {
     char exe_path[PATH_MAX];
@@ -38,112 +58,11 @@ char *resolve_db_path() {
     }
 }
 
-void wrap_text_by_words(char *text, size_t cols, size_t prefix_size) {
-    size_t last_space = 0;
-    size_t col_count = prefix_size;
-    char *result;
-    for (size_t i = 0; i < strlen(text); i++) {
-        if (text[i] == ' ') {
-            last_space = i;
-        } else if (col_count + 1 > cols && last_space > 0) {
-            text[last_space] = '\n';
-            col_count = prefix_size;
-            last_space = 0;
-        }
-        col_count += 1;
-    }
-}
-
 void strip_title(char *title) {
     for (size_t i = 0; i < strlen(title); i++) {
         if (title[i] == '_')
             title[i] = ' ';
     }
-}
-
-size_t get_thumbnail_sequence(char *thumb, char ***image_buffer, char *chafa_options) {
-    FILE *fp;
-    char buf[IMAGE_MAX_LINE_LENGTH];
-    char **lines = NULL;
-    size_t line_count = 0;
-
-    char image_temp_file[256];
-    strcpy(image_temp_file, IMAGE_TEMP_FILE);
-    int fd = mkstemp(image_temp_file);
-    if (fd == -1) {
-        fprintf(stderr, "Failed to create temp file!\n");
-        return -1;
-    }
-    close(fd);
-
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "curl -s --max-time 5 -o \"%s\" \"%s\"", image_temp_file, thumb);
-    if (system(cmd) != 0) {
-        fprintf(stderr, "Failed to download image file!\n");
-        unlink(image_temp_file);
-        return -1;
-    }
-
-    snprintf(cmd, sizeof(cmd), "chafa %s \"%s\"", chafa_options, image_temp_file);
-
-    // Alternatively, pipe the image data directly into chafa without a temp file:
-    // snprintf(cmd, sizeof(cmd), "curl -s \"%s\" | chafa %s", thumb, chafa_options);
-
-    fp = popen(cmd, "r");
-    if (fp == NULL) {
-        fprintf(stderr, "Failed to retrieve image data!\n");
-        unlink(image_temp_file);
-        return -1;
-    }
-
-    lines = malloc(IMAGE_MAX_LINES * sizeof(char *));
-    if (lines == NULL) {
-        fprintf(stderr, "Failed to allocate memory for image data!\n");
-        pclose(fp);
-        unlink(image_temp_file);
-        return -1;
-    }
-
-    char buffer[4096];
-
-    size_t br;
-    while ((br = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
-        // size_t len = strlen(buf);
-        // lines[line_count] = malloc((strlen(buf) + 1) * sizeof(char));
-        fwrite(buffer, 1, br, stdout); // Write directly
-
-        // if (lines[line_count] == NULL) {
-        //     fprintf(stderr, "Failed to allocate memory for image data!\n");
-        //     for (size_t i = 0; i < line_count; i++) {
-        //         free(lines[i]);
-        //     }
-        //     free(lines);
-        //     pclose(fp);
-        //     unlink(image_temp_file);
-        //     return -1;
-        // }
-        // strcpy(lines[line_count], buf);
-
-        line_count++;
-    }
-    printf("\033_Gq=1\033\\"); // Clear all Kitty graphics
-    fflush(stdout);
-
-    size_t lc = 0;
-    for (size_t i = 0; i < 4096; i++) {
-        if (buffer[i] == '\n')
-            lc++;
-    }
-    if (lc > 1) {
-    } // --format=symbols
-    else {
-    } // --format=kitty
-    printf("lines: %zu\n", lc);
-
-    pclose(fp);
-    unlink(image_temp_file);
-    *image_buffer = lines;
-    return line_count;
 }
 
 char *to_lower(char *str) {
@@ -159,79 +78,8 @@ void print_raw(Fact fact) {
         pages_string = cJSON_Print(fact.pages);
     }
     cJSON_Minify(pages_string);
-    printf("%s||%s||%d||%s\n", fact.text, fact.thumb, fact.year, pages_string);
+    printf("%s||%s||%d||%d||%d||%s\n", fact.text, fact.thumb, fact.t_width, fact.t_height, fact.year, pages_string);
     free(pages_string);
-}
-
-void print_fact(Fact fact) {
-    struct winsize w;
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
-
-    size_t image_width = 20;
-
-    char *sb[image_width + 1000];
-
-    wrap_text_by_words(fact.text, w.ws_col, image_width);
-    // printf("%s\nYear: %d%s\n", fact.text, abs(fact.year),
-    //        fact.year < 0 ? " BC" : "");
-    printf("%s\n", fact.text);
-
-    if (cJSON_IsArray(fact.pages)) {
-        cJSON *page, *thumb;
-        size_t i = 0;
-        size_t char_count = image_width + 5;
-        cJSON_ArrayForEach(page, fact.pages) {
-            if (i == 0) {
-                thumb = cJSON_GetObjectItemCaseSensitive(page, "thumb");
-                for (size_t r = 0; r < char_count - 5; r++) {
-                    printf(" ");
-                }
-                printf("See: ");
-            }
-
-            cJSON *t_title = cJSON_GetObjectItemCaseSensitive(page, "title");
-            cJSON *url = cJSON_GetObjectItemCaseSensitive(page, "url");
-            if (cJSON_IsString(t_title) && *t_title->valuestring &&
-                cJSON_IsString(url) && *url->valuestring) {
-                char *title = t_title->valuestring;
-                strip_title(title);
-
-                if (char_count + strlen(title) + 3 >= w.ws_col) {
-                    char_count = image_width + 5;
-                    printf("\n");
-                    for (size_t r = 0; r < char_count; r++) {
-                        printf(" ");
-                    }
-                } else if (i > 0) {
-                    printf(" • ");
-                    char_count += 3;
-                }
-                // Blue, italic, underlined hyperlink
-                printf("\033[34;3;4m\e]8;;%s\e\\%s\e]8;;\e\\\033[0m", url->valuestring, title);
-                char_count += strlen(title);
-            }
-            i++;
-        }
-        printf("\n");
-
-        char **image_lines = NULL;
-        size_t image_line_count = 0;
-        if (cJSON_IsString(thumb) && *thumb->valuestring) {
-            image_line_count = get_thumbnail_sequence(thumb->valuestring, &image_lines, "--size=30x10");
-        }
-
-        if (image_line_count < 0) {
-            fprintf(stderr, "Failed to retrieve image data!\n");
-            exit(1);
-        }
-        printf("%zu\n", image_line_count);
-        for (size_t i = 0; i < image_line_count; i++) {
-            size_t br;
-            free(image_lines[i]);
-        }
-        free(image_lines);
-    }
-    printf("Term size: %dx%d\n", w.ws_row, w.ws_col);
 }
 
 void print_cli_usage() {
@@ -248,27 +96,47 @@ void print_cli_usage() {
 static struct option cli_options[] = {
     {"help", no_argument, NULL, 'h'},
     {"raw", no_argument, NULL, 'r'},
-    {"db-path", required_argument, NULL, 'd'},
+    {"no-img", no_argument, NULL, 'i'},
+    {"db-path", required_argument, NULL, 'p'},
     {"type", required_argument, NULL, 't'},
+    {"day", required_argument, NULL, 'd'},
+    {"month", required_argument, NULL, 'm'},
     {NULL, 0, NULL, 0}};
 
-int main(int argc, char **argv) {
-    uint8_t output_raw = 0;
-    char *output_type = "selected";
-    char *db_path = resolve_db_path();
+CmdOptions parse_cmdline(int argc, char **argv) {
+    time_t t = time(NULL);
+    struct tm *tm_info = localtime(&t);
+
+    struct winsize term_size;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &term_size);
+
+    CmdOptions options = {
+        .output_raw = 0,
+        .render_image = 1,
+        .db_path = resolve_db_path(),
+        .fact_type = "selected",
+        .day = tm_info->tm_mday,
+        .month = tm_info->tm_mon + 1,
+
+        .term_rows = term_size.ws_row,
+        .term_cols = term_size.ws_col,
+    };
 
     int ch;
-    while ((ch = getopt_long(argc, argv, "hrd:t:", cli_options, NULL)) != -1) {
+    while ((ch = getopt_long(argc, argv, "hrid:t:d:m:", cli_options, NULL)) != -1) {
         if (ch == -1)
             break;
 
         switch (ch) {
         case 'r':
-            output_raw = 1;
+            options.output_raw = 1;
             break;
-        case 'd':
+        case 'i':
+            options.render_image = 0;
+            break;
+        case 'p':
             if (access(optarg, F_OK) == 0 && strcmp((char *)optarg + strlen(optarg) - 3, ".db") == 0) {
-                db_path = optarg;
+                options.db_path = optarg;
             } else {
                 printf("`db-path` is not a valid sqlite .db file.\n");
                 exit(1);
@@ -280,10 +148,16 @@ int main(int argc, char **argv) {
                 strcmp(to_lower(optarg), "deaths") == 0 ||
                 strcmp(to_lower(optarg), "events") == 0 ||
                 strcmp(to_lower(optarg), "holidays") == 0) {
-                output_type = optarg;
+                options.fact_type = optarg;
             } else {
                 printf("Invalid type `%s`. Valid types are `selected, births, deaths, events and holidays`\n\n", optarg);
             }
+            break;
+        case 'd':
+            options.day = atoi(optarg);
+            break;
+        case 'm':
+            options.month = atoi(optarg);
             break;
         case 'h':
         default:
@@ -292,21 +166,32 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (db_path == NULL) {
-        fprintf(stderr, "[ERROR]: Could not resolve DB_PATH.\n");
-        return 1;
+    // clang-format off
+	int month_days[] = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    // clang-format on
+    if (options.month < 1 || options.month > 12 || options.day < 1 || options.day > month_days[options.month - 1]) {
+        fprintf(stderr, "%02d/%02d is not a valid date.\n", options.day, options.month);
+        exit(1);
     }
 
+    if (options.db_path == NULL) {
+        fprintf(stderr, "[ERROR]: Could not resolve DB_PATH.\n");
+        exit(1);
+    }
+    return options;
+}
+
+Fact query_data(CmdOptions options, char *type, int day, int month) {
     sqlite3 *db;
-    int rc = sqlite3_open(db_path, &db);
+    int rc = sqlite3_open(options.db_path, &db);
     if (rc != SQLITE_OK) {
         fprintf(stderr, "[ERROR]: Failed to open database: %s\n", sqlite3_errmsg(db));
         sqlite3_close(db);
-        return 1;
+        exit(1);
     }
 
     sqlite3_stmt *stmt;
-    const char *sql = "SELECT text, thumb, year, pages FROM Facts WHERE type LIKE "
+    const char *sql = "SELECT text, thumb, thumb_w, thumb_h, year, pages FROM Facts WHERE type LIKE "
                       "? AND day LIKE ? AND month LIKE "
                       "? ORDER BY RANDOM() LIMIT 1;";
 
@@ -314,22 +199,28 @@ int main(int argc, char **argv) {
     if (rc != SQLITE_OK) {
         fprintf(stderr, "[ERROR]: Failed to prepare SQL query: %s\n", sqlite3_errmsg(db));
         sqlite3_close(db);
-        return 1;
+        exit(1);
     }
-    time_t t = time(NULL);
-    struct tm *tm_info = localtime(&t);
-    sqlite3_bind_text(stmt, 1, output_type, strlen(output_type), SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 2, tm_info->tm_mday);
-    sqlite3_bind_int(stmt, 3, tm_info->tm_mon + 1);
+    sqlite3_bind_text(stmt, 1, options.fact_type, strlen(options.fact_type), SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, day);
+    sqlite3_bind_int(stmt, 3, month);
 
-    Fact fact = {.text = "", .year = 0};
+    Fact fact = {
+        .text = "",
+        .thumb = "",
+        .t_width = 0,
+        .t_height = 0,
+        .year = 0,
+    };
 
     rc = sqlite3_step(stmt);
     if (rc == SQLITE_ROW) {
         fact.text = strdup((const char *)sqlite3_column_text(stmt, 0));
         fact.thumb = strdup((const char *)sqlite3_column_text(stmt, 1));
-        fact.year = sqlite3_column_int(stmt, 2);
-        char *pages_str = strdup((const char *)sqlite3_column_text(stmt, 3));
+        fact.t_width = sqlite3_column_int(stmt, 2);
+        fact.t_height = sqlite3_column_int(stmt, 3);
+        fact.year = sqlite3_column_int(stmt, 4);
+        char *pages_str = strdup((const char *)sqlite3_column_text(stmt, 5));
         fact.pages = cJSON_Parse(pages_str);
         free(pages_str);
         if (fact.pages == NULL) {
@@ -338,21 +229,137 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "No facts today :/.\n");
         sqlite3_close(db);
-        free(fact.text);
-        free(fact.thumb);
-        cJSON_Delete(fact.pages);
-        return 1;
+        exit(1);
     }
     sqlite3_finalize(stmt);
     sqlite3_close(db);
 
-    if (output_raw)
-        print_raw(fact);
-    else
-        print_fact(fact);
+    return fact;
+}
 
+void calculate_canvas_size(int img_width, int img_height,
+                           int max_cols, int max_rows,
+                           int *canvas_cols, int *canvas_rows) {
+    double img_aspect = (double)img_width / img_height;
+    double max_aspect = (double)max_cols / max_rows;
+
+    if (img_aspect > max_aspect) {
+        // Image is wider - limit by columns
+        *canvas_cols = max_cols;
+        *canvas_rows = (int)(max_cols / img_aspect);
+    } else {
+        // Image is taller - limit by rows
+        *canvas_rows = max_rows;
+        *canvas_cols = (int)(max_rows * img_aspect);
+    }
+}
+
+uint8_t render_thumb(char *thumb, int width, int height, int term_width, int term_height) {
+    if (MAX_IMAGE_WIDTH * 3 > term_width || MAX_IMAGE_HEIGHT * 3 > term_height)
+        return 0;
+
+    char image_temp_file[256] = IMAGE_TEMP_FILE;
+    int fd = mkstemp(image_temp_file);
+    if (fd == -1) {
+        fprintf(stderr, "Failed to create temp file!\n");
+        return 0;
+    }
+    close(fd);
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "curl -s --max-time 5 -o \"%s\" \"%s\"", image_temp_file, thumb);
+    if (system(cmd) != 0) {
+        fprintf(stderr, "Failed to download image file!\n");
+        unlink(image_temp_file);
+        return 0;
+    }
+
+    int img_width, img_height, channel_c;
+    unsigned char *image_data = stbi_load(image_temp_file, &img_width, &img_height, &channel_c, STBI_rgb_alpha);
+    if (image_data == NULL) {
+        fprintf(stderr, "Failed to load image file!\n");
+        unlink(image_temp_file);
+        return 0;
+    }
+
+    ChafaCanvasConfig *config = chafa_canvas_config_new();
+    int canvas_w = 30, canvas_h = 10;
+    chafa_calc_canvas_geometry(img_width, img_height, &canvas_w, &canvas_h, 0.5, FALSE, FALSE);
+    chafa_canvas_config_set_geometry(config, canvas_w, canvas_h);
+    chafa_canvas_config_set_pixel_mode(config, CHAFA_PIXEL_MODE_KITTY);
+    // chafa_canvas_config_set_canvas_mode(config, CHAFA_CANVAS_MODE_TRUECOLOR);
+    // chafa_canvas_config_set_work_factor(config, 1.0);
+    // chafa_canvas_config_set_optimizations(config, CHAFA_OPTIMIZATION_ALL);
+    ChafaCanvas *canvas = chafa_canvas_new(config);
+
+    if (canvas == NULL) {
+        fprintf(stderr, "Failed to render image file!\n");
+        stbi_image_free(image_data);
+        return 0;
+    }
+
+    chafa_canvas_draw_all_pixels(canvas, CHAFA_PIXEL_RGBA8_UNASSOCIATED, image_data, img_width, img_height, img_width * 4);
+    GString *g_string = chafa_canvas_print(canvas, NULL);
+    if (g_string != NULL) {
+        printf("%s\n", g_string->str);
+        g_string_free(g_string, TRUE);
+    } else {
+        fprintf(stderr, "Failed to render image file!\n");
+        return 0;
+    }
+
+    chafa_canvas_unref(canvas);
+    chafa_canvas_config_unref(config);
+    stbi_image_free(image_data);
+
+    // snprintf(cmd, sizeof(cmd), "chafa --size=%dx%d --view-size=%dx%d --relative=on --fit-width --align='center,center' \"%s\"", MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT, MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT, image_temp_file);
+    // // Alternatively, pipe the image data directly into chafa without a temp file:
+    // // snprintf(cmd, sizeof(cmd), "curl -s \"%s\" | chafa --size=30x10", thumb);
+    //
+    // if (system(cmd) != 0) {
+    //     fprintf(stderr, "Failed to render image file!\n");
+    //     unlink(image_temp_file);
+    //     return 0;
+    // }
+
+    unlink(image_temp_file);
+    return 1;
+}
+
+void print_fact(Fact fact, uint8_t image_rendered, int term_width, int term_height) {
+    int initial_col = 0, initial_row = 0;
+
+    if (image_rendered)
+        initial_col = MAX_IMAGE_WIDTH + 2;
+
+    // Save cursor position:
+    printf("\033[s");
+    // Move cursor to the right:
+    printf("\033[%dC", initial_col);
+    // Move cursor up:
+    printf("\033[%dA", MAX_IMAGE_HEIGHT);
+    printf("Hey, there!");
+    // Restore cursor position:
+    printf("\033[u");
+}
+
+int main(int argc, char **argv) {
+    CmdOptions options = parse_cmdline(argc, argv);
+
+    Fact fact = query_data(options, options.fact_type, options.day, options.month);
+
+    if (options.output_raw)
+        print_raw(fact);
+    else {
+        uint8_t image_rendered = 0;
+        if (options.render_image && fact.thumb && strlen(fact.thumb) > 0) {
+            image_rendered = render_thumb(fact.thumb, fact.t_width, fact.t_height, options.term_cols, options.term_rows);
+        }
+        print_fact(fact, image_rendered, options.term_cols, options.term_rows);
+    }
     free(fact.text);
     free(fact.thumb);
     cJSON_Delete(fact.pages);
+
     return 0;
 }

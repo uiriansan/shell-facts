@@ -1,4 +1,4 @@
-Simple utility that fetches random facts from Wikipedia, saves them locally and displays on your terminal.
+Simple utility that fetches random facts from Wikipedia, saves them locally and displays on your Linux terminal.
 
 # Build:
 
@@ -6,6 +6,8 @@ Simple utility that fetches random facts from Wikipedia, saves them locally and 
 - [Python3](https://www.python.org/);
 - [sqlite3](https://sqlite.org/);
 - [chafa](https://github.com/hpjansson/chafa);
+- [glib2](https://docs.gtk.org/glib/);
+- [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/)
 
 ### 2. Clone this repo:
 ```bash
