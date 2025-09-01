@@ -1,5 +1,7 @@
 Simple utility that fetches random facts from Wikipedia, saves them locally and displays on your Linux terminal.
 
+<img src="https://github.com/uiriansan/shell-facts/blob/main/prev.png" width="100%" />
+
 # Build:
 
 ### 1. Install system dependencies:
