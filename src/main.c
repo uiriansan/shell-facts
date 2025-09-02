@@ -251,8 +251,8 @@ Fact query_data(CmdOptions options, char *type, int day, int month) {
     sqlite3_bind_int(stmt, 3, month);
 
     Fact fact = {
-        .text = "",
-        .thumb = "",
+        .text = NULL,
+        .thumb = NULL,
         .t_width = 0,
         .t_height = 0,
         .day = day,
@@ -263,7 +263,9 @@ Fact query_data(CmdOptions options, char *type, int day, int month) {
     rc = sqlite3_step(stmt);
     if (rc == SQLITE_ROW) {
         fact.text = strdup((const char *)sqlite3_column_text(stmt, 0));
-        fact.thumb = strdup((const char *)sqlite3_column_text(stmt, 1));
+        if (sqlite3_column_type(stmt, 1) != SQLITE_NULL) {
+            fact.thumb = strdup((const char *)sqlite3_column_text(stmt, 1));
+        }
         fact.t_width = sqlite3_column_int(stmt, 2);
         fact.t_height = sqlite3_column_int(stmt, 3);
         fact.year = sqlite3_column_int(stmt, 4);
@@ -404,11 +406,12 @@ char *number_to_ordinal(int n) {
 size_t wrap_pages_by_words(cJSON *pages, DS_SB_StringBuffer **sb_out, size_t initial_col, TermSize term_size) {
     cJSON *page;
     size_t i = 0;
-    size_t row_c = 0, lines = 1;
+    size_t row_c = 0, lines = 0;
 
     cJSON_ArrayForEach(page, pages) {
         if (i == 0) {
             ds_sb_append(*sb_out, "See: ");
+            lines = 1;
         }
         cJSON *t_title = cJSON_GetObjectItemCaseSensitive(page, "title");
         cJSON *url = cJSON_GetObjectItemCaseSensitive(page, "url");
@@ -547,7 +550,7 @@ void print_fact(Fact fact, uint8_t image_rendered, ChafaTermInfo *term_info, Ter
         if (cJSON_IsArray(fact.pages)) {
             wrap_pages_by_words(fact.pages, &sb, 0, term_size);
         }
-        if (sb != NULL)
+        if (sb != NULL && sb->size > 0)
             printf("\n%s\n", sb->data);
 
         ds_sb_free(sb);

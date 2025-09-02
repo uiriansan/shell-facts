@@ -9,7 +9,8 @@ Simple utility that fetches random facts from Wikipedia, saves them locally and 
 - [sqlite3](https://sqlite.org/);
 - [chafa](https://github.com/hpjansson/chafa);
 - [glib2](https://docs.gtk.org/glib/);
-- [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/)
+- [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/);
+- [a NerdFont (optional)](https://www.nerdfonts.com/)
 
 ### 2. Clone this repo:
 ```bash
