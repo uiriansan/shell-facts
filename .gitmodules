@@ -1,3 +1,3 @@
 [submodule "cJSON"]
-	path = includes/cjson
+	path = include/vendor/cjson
 	url = git@github.com:DaveGamble/cJSON.git
